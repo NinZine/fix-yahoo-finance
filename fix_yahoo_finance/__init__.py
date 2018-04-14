@@ -59,8 +59,9 @@ def get_yahoo_crumb(force=False):
         if delta < _YAHOO_TTL:
             return (_YAHOO_CRUMB, _YAHOO_COOKIE)
 
-    res = _requests.get('https://finance.yahoo.com/quote/SPY/history')
-    _YAHOO_COOKIE = res.cookies['B']
+    session = _requests.session()
+    res = session.get('https://finance.yahoo.com/quote/SPY/history')
+    _YAHOO_COOKIE = _requests.utils.dict_from_cookiejar(session.cookies)
 
     pattern = _re.compile('.*"CrumbStore":\{"crumb":"(?P<crumb>[^"]+)"\}')
     for line in res.text.splitlines():
@@ -225,16 +226,28 @@ def download(tickers, start=None, end=None, as_panel=True,
 def download_one(ticker, start, end, interval, auto_adjust=None, actions=None):
 
     tried_once = False
-    crumb, cookie = get_yahoo_crumb()
+    crumb, cookies = get_yahoo_crumb()
 
     url_str = "https://query1.finance.yahoo.com/v7/finance/download/%s"
     url_str += "?period1=%s&period2=%s&interval=%s&events=%s&crumb=%s"
+
+    headers = {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language':'en-US,en;q=0.5',
+        'Cache-Control':'no-cache',
+        'Connection':'keep-alive',
+        'Host':'query1.finance.yahoo.com',
+        'Origin':'https://finance.yahoo.com',
+        'Pragma':'no-cache',
+        'Referer':'https://finance.yahoo.com/quote/%s/history?p=%s' % (ticker, ticker),
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:59.0) Gecko/20100101 Firefox/59.0'
+    }
 
     actions = None if '^' in ticker else actions
 
     if actions:
         url = url_str % (ticker, start, end, interval, 'div', crumb)
-        res = _requests.get(url, cookies={'B': cookie}).text
+        res = _requests.get(url, headers=headers, cookies=cookies).text
         # print(res)
         div = _pd.DataFrame(columns=['action', 'value'])
         if "error" not in res:
@@ -250,7 +263,7 @@ def download_one(ticker, start, end, interval, auto_adjust=None, actions=None):
 
         # download Stock Splits data
         url = url_str % (ticker, start, end, interval, 'split', crumb)
-        res = _requests.get(url, cookies={'B': cookie}).text
+        res = _requests.get(url, headers=headers, cookies=cookies).text
         split = _pd.DataFrame(columns=['action', 'value'])
         if "error" not in res:
             split = _pd.read_csv(_io.StringIO(res),
@@ -270,7 +283,7 @@ def download_one(ticker, start, end, interval, auto_adjust=None, actions=None):
 
     # download history
     url = url_str % (ticker, start, end, interval, 'history', crumb)
-    res = _requests.get(url, cookies={'B': cookie}).text
+    res = _requests.get(url, headers=headers, cookies=cookies).text
     hist = _pd.DataFrame(
         columns=['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'])
 
